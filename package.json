@@ -1,0 +1,24 @@
+{
+  "name": "myevent",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "packageManager": "bun@1.0.38",
+  "scripts": {
+    "dev": "turbo dev --parallel",
+    "build": "turbo build",
+    "start": "turbo start",
+    "format": "biome format --write .",
+    "clean": "git clean -xdf node_modules"
+  },
+  "resolutions": {
+    "jackspeak": "2.1.1"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^1.9.4",
+    "@manypkg/cli": "^0.23.0",
+    "@types/bun": "latest",
+    "turbo": "^2.3.3"
+  }
+}

@@ -1,0 +1,40 @@
+services:
+  redis:
+    image: redis:alpine
+    container_name: myevent-redis
+    ports:
+      - "6379:6379"
+    restart: unless-stopped
+    volumes:
+      - redis_data:/data
+    networks:
+      - app-network
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: myevent-postgres
+    ports:
+      - "5432:5432"
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: securepassword
+      POSTGRES_DB: myevent_db
+      DATABASE_URL: postgres://postgres:securepassword@localhost:5432/myevent_db
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    networks:
+      - app-network
+
+volumes:
+  redis_data:
+  postgres_data:
+
+networks:
+  app-network:
+    driver: bridge

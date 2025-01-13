@@ -1,0 +1,25 @@
+{
+  "name": "@myevent/dashboard",
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "next dev --turbopack",
+    "build": "bun run with-env next build",
+    "start": "next start",
+    "clean": "git clean -xdf .cache .turbo dist node_modules .next",
+    "clean:cache": "git clean -xdf .cache",
+    "with-env": "dotenv -e ../../.env --"
+  },
+  "dependencies": {
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "next": "15.1.4"
+  },
+  "devDependencies": {
+    "@myevent/tsconfig": "workspace:*",
+    "@types/node": "^20.17.12",
+    "@types/react": "^19.0.6",
+    "@types/react-dom": "^19.0.3",
+    "typescript": "^5.7.3"
+  }
+}

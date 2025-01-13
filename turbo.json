@@ -1,0 +1,41 @@
+{
+  "$schema": "https://turborepo.org/schema.json",
+  "globalDependencies": ["**/.env"],
+  "ui": "tui",
+  "tasks": {
+    "build": {
+      "dependsOn": ["^build"],
+      "outputs": [
+        ".next/**",
+        "!.next/cache/**",
+        "next-env.d.ts",
+        ".output/**",
+        ".vercel/output/**",
+        ".cache/tsbuildinfo.json",
+        "dist/**"
+      ]
+    },
+    "dev": {
+      "persistent": true,
+      "cache": false
+    },
+    "start": {
+      "persistent": false,
+      "cache": false
+    },
+    "format": {
+      "outputs": [".cache/.prettiercache"],
+      "outputLogs": "new-only"
+    },
+    "clean": {
+      "cache": false
+    }
+  },
+  "globalEnv": [
+    "APPLICATION_URL",
+    "NEXT_TELEMETRY_DISABLED",
+    "LOG_LEVEL",
+    "PORT"
+  ],
+  "globalPassThroughEnv": ["NODE_ENV", "CI", "npm_lifecycle_event"]
+}
