@@ -1,0 +1,3 @@
+{
+  "extends": "@myevent/tsconfig/base.json"
+}
