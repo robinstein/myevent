@@ -2,6 +2,12 @@
   "name": "@myevent/db",
   "module": "src/index.ts",
   "type": "module",
+  "scripts": {
+    "clean": "rm -rf .turbo node_modules",
+    "lint": "biome check .",
+    "format": "biome --write .",
+    "typecheck": "tsc --noEmit"
+  },
   "devDependencies": {
     "@types/bun": "latest",
     "@types/pg": "^8.11.10",

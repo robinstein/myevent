@@ -1,14 +1,15 @@
 {
   "name": "myevent",
-  "workspaces": [
-    "apps/*",
-    "packages/*"
-  ],
-  "packageManager": "bun@1.0.38",
+  "workspaces": ["apps/*", "packages/*", "tooling/*"],
+  "packageManager": "bun@1.2.0",
   "scripts": {
     "dev": "turbo dev --parallel",
+    "dev:dashboard": "turbo dev --filter=@myevent/dashboard",
     "build": "turbo build",
     "start": "turbo start",
+    "db:push": "drizzle-kit push --config ./packages/db/src/config.ts",
+    "db:generate": "drizzle-kit generate --config ./packages/db/src/config.ts",
+    "db:studio": "drizzle-kit studio --config ./packages/db/src/config.ts",
     "format": "biome format --write .",
     "clean": "git clean -xdf node_modules"
   },

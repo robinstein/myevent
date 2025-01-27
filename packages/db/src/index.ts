@@ -5,7 +5,7 @@ export const db = drizzle({
   connection: process.env.DATABASE_URL!,
   schema: schema,
   casing: "snake_case",
-  logger: true,
+  logger: process.env.NODE_ENV === "development",
 });
 
 export * from "drizzle-orm/sql";

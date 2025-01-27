@@ -1,8 +1,8 @@
 import {
-  pgTable as table,
-  varchar,
   boolean,
+  pgTable as table,
   timestamp,
+  varchar,
 } from "drizzle-orm/pg-core";
 
 const timestamps = {
