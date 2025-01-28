@@ -1,5 +1,6 @@
 import { Geist, Geist_Mono } from "next/font/google";
 import { Theme } from "frosted-ui";
+import { NuqsAdapter } from "nuqs/adapters/next/app";
 import type { PropsWithChildren } from "react";
 
 import "./globals.css";
@@ -27,7 +28,7 @@ export default function RootLayout({ children }: PropsWithChildren) {
           warningColor="yellow"
           dangerColor="red"
         >
-          {children}
+          <NuqsAdapter>{children}</NuqsAdapter>
         </Theme>
       </body>
     </html>
