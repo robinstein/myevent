@@ -24,11 +24,10 @@ function generateId(length: number): string {
   return buffer.toString("utf8");
 }
 
-function generateRandomRecoveryCode(): string {
-  const recoveryCodeBytes = new Uint8Array(10);
-  crypto.getRandomValues(recoveryCodeBytes);
-  const recoveryCode = encodeBase32UpperCaseNoPadding(recoveryCodeBytes);
-  return recoveryCode;
+function generateRandomToken(byteLength = 10): string {
+  const bytes = new Uint8Array(byteLength);
+  crypto.getRandomValues(bytes);
+  return encodeBase32UpperCaseNoPadding(bytes);
 }
 
-export { generateId, generateRandomRecoveryCode };
+export { generateId, generateRandomToken };

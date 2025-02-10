@@ -1,9 +1,11 @@
-import {
-  encodeBase32LowerCaseNoPadding,
-  encodeHexLowerCase,
-} from "@oslojs/encoding";
+import { encodeHexLowerCase } from "@oslojs/encoding";
 import { sha256 } from "@oslojs/crypto/sha2";
-import { KEYS, type RawSession, type Session } from "@myevent/core";
+import {
+  KEYS,
+  generateRandomToken,
+  type RawSession,
+  type Session,
+} from "@myevent/core";
 import { deleteFromCache, getFromCache, setToCache } from "@myevent/kv";
 import {
   setPreferredSignInMethodCookie,
@@ -13,10 +15,7 @@ import {
 import { addYears } from "date-fns";
 
 function generateSessionToken(): string {
-  const bytes = new Uint8Array(20);
-  crypto.getRandomValues(bytes);
-  const token = encodeBase32LowerCaseNoPadding(bytes);
-  return token;
+  return generateRandomToken(20);
 }
 
 async function createSession(token: string, userId: string) {
