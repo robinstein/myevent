@@ -1,109 +1,89 @@
 import { cookies } from "next/headers";
 import type { NextRequest } from "next/server";
+import { z } from "zod";
 import { getGoogleUser, google } from "@/lib/auth/providers";
-import { createSession, generateSessionToken } from "@/lib/auth/sessions";
-import { getCachedSession, setSessionTokenCookie } from "@/lib/auth/cookies";
-import { generateId } from "@/utils/random";
-import { createUser, getUserByGoogleId, updateUser } from "@/repositories/user";
-import { addYears } from "date-fns";
+import { initializeUserSession } from "@/lib/auth/sessions";
+import { getCachedSession, type SignInMethod } from "@/lib/auth/cookies";
+import { createRedirectResponse } from "@/lib/http";
+import { getDifferingValues } from "@/utils/objects";
+import { generateId } from "@myevent/core";
+import {
+  createUser,
+  getUserByGoogleId,
+  updateUser,
+} from "@myevent/repositories";
+
+const SIGN_IN_METHOD: SignInMethod = "google";
+
+const callbackSchema = z.object({
+  code: z.string().min(1, "Authorization code is required"),
+  state: z.string().min(1, "State is required"),
+});
 
 export async function GET(req: NextRequest) {
-  const { user } = await getCachedSession();
-  const cookieStore = await cookies();
-
-  const { code, state } = Object.fromEntries(
-    req.nextUrl.searchParams.entries()
-  );
-  const storedState = cookieStore.get("google_oauth_state")?.value ?? null;
-  const codeVerifier = cookieStore.get("google_code_verifier")?.value ?? null;
-  let redirectUrl = cookieStore.get("redirect_to_url")?.value ?? "/app";
-
-  if (
-    !code ||
-    !state ||
-    !storedState ||
-    !codeVerifier ||
-    state !== storedState
-  ) {
-    console.error("Invalid state or code. Redirecting to login...");
-
-    return new Response(null, {
-      status: 200,
-      headers: {
-        Location: `/login?error=AUTH_CODE_ERROR&redirectTo=${encodeURIComponent(
-          redirectUrl
-        )}`,
-      },
-    });
-  }
-
   try {
-    const tokens = await google.validateAuthorizationCode(code, codeVerifier);
-    const accessToken = tokens.accessToken();
+    const { user } = await getCachedSession();
+    const cookieStore = await cookies();
+    let redirectUrl = cookieStore.get("redirect_to_url")?.value ?? "/app";
 
-    const googleUser = await getGoogleUser(accessToken);
-    if (!googleUser) {
-      throw new Error("An Error occurred. Try again...");
+    const params = Object.fromEntries(req.nextUrl.searchParams.entries());
+    const result = callbackSchema.safeParse(params);
+
+    if (!result.success) {
+      return createRedirectResponse("/login", "AUTH_CODE_ERROR");
     }
 
-    const myeventUser = await getUserByGoogleId(googleUser.id);
-    const userId = user?.id ?? generateId(16);
+    const { code, state } = result.data;
+    const storedState = cookieStore.get("google_oauth_state")?.value;
+    const codeVerifier = cookieStore.get("google_code_verifier")?.value;
 
-    if (myeventUser) {
-      if (googleUser.picture) {
-        await updateUser(myeventUser.id, { avatarUrl: googleUser.picture });
+    if (!storedState || !codeVerifier || state !== storedState) {
+      return createRedirectResponse("/login", "INVALID_STATE");
+    }
+
+    const tokens = await google.validateAuthorizationCode(code, codeVerifier);
+    const googleUser = await getGoogleUser(tokens.accessToken());
+
+    if (!googleUser) {
+      throw new Error("Failed to fetch Google profile");
+    }
+
+    const existingUser = await getUserByGoogleId(googleUser.id).catch(
+      () => null
+    );
+    const userId = existingUser?.id ?? user?.id ?? generateId(16);
+
+    const userDetails = {
+      name: googleUser.name,
+      avatarUrl: googleUser.picture,
+      email: googleUser.email,
+      emailVerified: googleUser.verified_email,
+      googleId: googleUser.id,
+    };
+
+    if (existingUser) {
+      const updates = getDifferingValues(existingUser, userDetails);
+      if (Object.keys(updates).length > 0) {
+        await updateUser(existingUser.id, updates);
+      }
+    } else if (user) {
+      const updates = getDifferingValues(user, userDetails);
+      if (Object.keys(updates).length > 0) {
+        await updateUser(user.id, updates);
       }
     } else {
-      if (user) {
-        await updateUser(user.id, { googleId: googleUser.id });
-
-        return new Response(null, {
-          status: 302,
-          headers: {
-            Location: redirectUrl,
-          },
-        });
-      }
-
       await createUser({
         id: userId,
-        email: googleUser.email,
-        name: googleUser.name,
-        emailVerified: googleUser.verified_email,
-        avatarUrl: googleUser.picture,
-        googleId: googleUser.id,
+        ...userDetails,
       });
 
       redirectUrl = "/onboarding";
     }
 
-    cookieStore.set("preferred-signin-method", "google", {
-      path: "/",
-      secure: process.env.NODE_ENV === "production",
-      httpOnly: true,
-      expires: addYears(new Date(), 1),
-    });
-
-    const sessionToken = generateSessionToken();
-    const session = await createSession(sessionToken, userId);
-    await setSessionTokenCookie(sessionToken, session.expiresAt);
-
-    return new Response(null, {
-      status: 302,
-      headers: {
-        Location: redirectUrl,
-      },
-    });
-  } catch (err) {
-    console.error({ err });
-
-    return new Response(null, {
-      status: 302,
-      headers: {
-        Location: `/login?error=AUTH_CODE_ERROR&redirectTo=${encodeURIComponent(
-          redirectUrl
-        )}`,
-      },
-    });
+    await initializeUserSession(userId, SIGN_IN_METHOD);
+    return createRedirectResponse(redirectUrl);
+  } catch (error) {
+    console.error("Google authentication error:", error);
+    return createRedirectResponse("/login", "AUTH_CODE_ERROR");
   }
 }

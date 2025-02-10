@@ -2,13 +2,17 @@ import { cookies } from "next/headers";
 import { cache } from "react";
 import { validateSession } from "@myevent/core";
 
+const COOKIE_BASE_OPTIONS = {
+  path: "/",
+  secure: process.env.NODE_ENV === "production",
+  httpOnly: true,
+};
+
 async function setSessionTokenCookie(token: string, expiresAt: Date) {
   const cookieStore = await cookies();
 
   cookieStore.set("session", token, {
-    httpOnly: true,
-    path: "/",
-    secure: process.env.NODE_ENV === "production",
+    ...COOKIE_BASE_OPTIONS,
     sameSite: "lax",
     expires: expiresAt,
   });
@@ -22,9 +26,7 @@ async function setPreferredSignInMethodCookie(
   const cookieStore = await cookies();
 
   cookieStore.set("preferred-signin-method", method, {
-    path: "/",
-    secure: process.env.NODE_ENV === "production",
-    httpOnly: true,
+    ...COOKIE_BASE_OPTIONS,
     expires: expiresAt,
   });
 }
@@ -32,9 +34,7 @@ async function setPreferredSignInMethodCookie(
 async function deleteSessionTokenCookie() {
   const cookieStore = await cookies();
   cookieStore.set("session", "", {
-    httpOnly: true,
-    path: "/",
-    secure: process.env.NODE_ENV === "production",
+    ...COOKIE_BASE_OPTIONS,
     sameSite: "lax",
     maxAge: 0,
   });
@@ -50,6 +50,7 @@ async function fetchFreshSession() {
 const getCachedSession = cache(fetchFreshSession);
 
 export {
+  COOKIE_BASE_OPTIONS,
   setSessionTokenCookie,
   setPreferredSignInMethodCookie,
   deleteSessionTokenCookie,

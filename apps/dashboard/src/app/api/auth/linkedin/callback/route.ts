@@ -1,118 +1,98 @@
 import { cookies } from "next/headers";
 import type { NextRequest } from "next/server";
-import { addYears } from "date-fns";
+import * as arctic from "arctic";
+import { z } from "zod";
 import {
   getLinkedinProfile,
   linkedin,
   LinkedinUserSchema,
 } from "@/lib/auth/providers";
-import { createSession, generateSessionToken } from "@/lib/auth/sessions";
-import { getCachedSession, setSessionTokenCookie } from "@/lib/auth/cookies";
-import { generateId } from "@/utils/random";
+import { initializeUserSession } from "@/lib/auth/sessions";
+import { getCachedSession, type SignInMethod } from "@/lib/auth/cookies";
+import { createRedirectResponse } from "@/lib/http";
+import { getDifferingValues } from "@/utils/objects";
+import { generateId } from "@myevent/core";
 import {
   getUserByLinkedinId,
   updateUser,
   createUser,
-} from "@/repositories/user";
-import * as arctic from "arctic";
+} from "@myevent/repositories";
+
+const SIGN_IN_METHOD: SignInMethod = "linkedin";
+
+const callbackSchema = z.object({
+  code: z.string().min(1, "Authorization code is required"),
+  state: z.string().min(1, "State is required"),
+});
 
 export async function GET(req: NextRequest) {
-  const { user } = await getCachedSession();
-  const cookieStore = await cookies();
-
-  const { code, state } = Object.fromEntries(
-    req.nextUrl.searchParams.entries()
-  );
-  const storedState = cookieStore.get("linkedin_oauth_state")?.value ?? null;
-  let redirectUrl = cookieStore.get("redirect_to_url")?.value ?? "/app";
-
-  if (!code || !state || !storedState || state !== storedState) {
-    console.error("Invalid state or code. Redirecting to login...");
-
-    return new Response(null, {
-      status: 200,
-      headers: {
-        Location: `/login?error=AUTH_CODE_ERROR&redirectTo=${encodeURIComponent(
-          redirectUrl
-        )}`,
-      },
-    });
-  }
-
   try {
+    const { user } = await getCachedSession();
+    const cookieStore = await cookies();
+    let redirectUrl = cookieStore.get("redirect_to_url")?.value ?? "/app";
+
+    const params = Object.fromEntries(req.nextUrl.searchParams.entries());
+    const result = callbackSchema.safeParse(params);
+
+    if (!result.success) {
+      return createRedirectResponse("/login", "AUTH_CODE_ERROR");
+    }
+
+    const { code, state } = result.data;
+    const storedState = cookieStore.get("linkedin_oauth_state")?.value;
+
+    if (!storedState || state !== storedState) {
+      return createRedirectResponse("/login", "INVALID_STATE");
+    }
+
     const tokens = await linkedin.validateAuthorizationCode(code);
-    const idToken = tokens.idToken();
     const linkedinUser = LinkedinUserSchema.parse(
-      arctic.decodeIdToken(idToken)
+      arctic.decodeIdToken(tokens.idToken())
     );
 
-    const accessToken = tokens.accessToken();
+    const linkedinProfile = await getLinkedinProfile(tokens.accessToken());
+    if (!linkedinProfile) {
+      throw new Error("Failed to fetch LinkedIn profile");
+    }
 
-    const myeventUser = await getUserByLinkedinId(linkedinUser.sub);
-    const userId = myeventUser?.id ?? generateId(16);
+    const existingUser = await getUserByLinkedinId(linkedinUser.sub).catch(
+      () => null
+    );
+    const userId = existingUser?.id ?? user?.id ?? generateId(16);
 
-    if (myeventUser) {
-      if (linkedinUser.picture) {
-        await updateUser(myeventUser.id, { avatarUrl: linkedinUser.picture });
+    const userDetails = {
+      name: linkedinUser.name,
+      avatarUrl: linkedinUser.picture,
+      email: linkedinUser.email,
+      emailVerified: linkedinUser.email_verified,
+      linkedinId: linkedinUser.sub,
+      linkedinVanityName: linkedinProfile.vanityName,
+      biography: linkedinProfile.localizedHeadline,
+    };
+
+    if (existingUser) {
+      const updates = getDifferingValues(existingUser, userDetails);
+      if (Object.keys(updates).length > 0) {
+        await updateUser(existingUser.id, updates);
+      }
+    } else if (user) {
+      const updates = getDifferingValues(user, userDetails);
+      if (Object.keys(updates).length > 0) {
+        await updateUser(user.id, updates);
       }
     } else {
-      if (user) {
-        await updateUser(user.id, { linkedinId: linkedinUser.sub });
-
-        return new Response(null, {
-          status: 302,
-          headers: {
-            Location: redirectUrl,
-          },
-        });
-      }
-
-      const linkedinProfile = await getLinkedinProfile(accessToken);
-      if (!linkedinProfile) {
-        throw new Error("An Error occurred. Try again...");
-      }
-
-      const newUser = await createUser({
+      await createUser({
         id: userId,
-        email: linkedinUser.email,
-        name: linkedinUser.name,
-        emailVerified: linkedinUser.email_verified,
-        avatarUrl: linkedinUser.picture,
-        linkedinId: linkedinUser.sub,
-        linkedinVanityName: linkedinProfile.vanityName,
-        linkedinHeadline: linkedinProfile.localizedHeadline,
+        ...userDetails,
       });
 
       redirectUrl = "/onboarding";
     }
 
-    cookieStore.set("preferred-signin-method", "linkedin", {
-      path: "/",
-      secure: process.env.NODE_ENV === "production",
-      httpOnly: true,
-      expires: addYears(new Date(), 1),
-    });
-
-    const sessionToken = generateSessionToken();
-    const session = await createSession(sessionToken, userId);
-    await setSessionTokenCookie(sessionToken, session.expiresAt);
-
-    return new Response(null, {
-      status: 302,
-      headers: {
-        Location: redirectUrl,
-      },
-    });
-  } catch (err) {
-    console.error({ err });
-
-    return new Response(null, {
-      status: 302,
-      headers: {
-        Location: `/login?error=AUTH_CODE_ERROR&redirectTo=${encodeURIComponent(
-          redirectUrl
-        )}`,
-      },
-    });
+    await initializeUserSession(userId, SIGN_IN_METHOD);
+    return createRedirectResponse(redirectUrl);
+  } catch (error) {
+    console.error("LinkedIn authentication error:", error);
+    return createRedirectResponse("/login", "AUTH_CODE_ERROR");
   }
 }
