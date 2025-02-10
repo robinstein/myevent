@@ -1,0 +1,17 @@
+{
+  "name": "@myevent/repositories",
+  "module": "src/index.ts",
+  "type": "module",
+  "dependencies": {
+    "@myevent/db": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/bun": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^5.0.0"
+  },
+  "exports": {
+    ".": "./src/index.ts"
+  }
+}
