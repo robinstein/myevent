@@ -5,6 +5,12 @@ import {
 import { sha256 } from "@oslojs/crypto/sha2";
 import { KEYS, type RawSession, type Session } from "@myevent/core";
 import { deleteFromCache, getFromCache, setToCache } from "@myevent/kv";
+import {
+  setPreferredSignInMethodCookie,
+  setSessionTokenCookie,
+  type SignInMethod,
+} from "./cookies";
+import { addYears } from "date-fns";
 
 function generateSessionToken(): string {
   const bytes = new Uint8Array(20);
@@ -82,6 +88,20 @@ async function setSessionTwoFactorVerified(sessionId: string, verified = true) {
   return updatedSession;
 }
 
+async function initializeUserSession(userId: string, method: SignInMethod) {
+  const SIGN_IN_METHOD_COOKIE_EXPIRY_YEARS = 1;
+  const signInMethodCookieExpiryDate = addYears(
+    new Date(),
+    SIGN_IN_METHOD_COOKIE_EXPIRY_YEARS
+  );
+
+  await setPreferredSignInMethodCookie(method, signInMethodCookieExpiryDate);
+  const sessionToken = generateSessionToken();
+  const session = await createSession(sessionToken, userId);
+  await setSessionTokenCookie(sessionToken, session.expiresAt);
+  return session;
+}
+
 async function invalidateSession(sessionId: string): Promise<void> {
   await deleteFromCache(KEYS.session(sessionId));
 }
@@ -90,5 +110,6 @@ export {
   generateSessionToken,
   createSession,
   setSessionTwoFactorVerified,
+  initializeUserSession,
   invalidateSession,
 };

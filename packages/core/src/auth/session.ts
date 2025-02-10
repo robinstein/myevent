@@ -17,7 +17,7 @@ export interface RawSession {
   expires_at: Date;
 }
 
-const KEYS = {
+export const KEYS = {
   session: (id: string) => `session:${id}`,
 } as const;
 

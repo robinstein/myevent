@@ -14,7 +14,7 @@ async function setSessionTokenCookie(token: string, expiresAt: Date) {
   });
 }
 
-type SignInMethod = "google" | "linkedin" | "otp";
+export type SignInMethod = "google" | "linkedin" | "otp";
 async function setPreferredSignInMethodCookie(
   method: SignInMethod,
   expiresAt: Date
