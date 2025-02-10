@@ -48,7 +48,6 @@ export async function POST(req: NextRequest) {
       return createRedirectResponse(redirectUrl, "INVALID_EMAIL_CODE");
     }
 
-    const userId = user?.id ?? generateId(16);
     const userDetails = isEmail(verificationCode.identifier)
       ? { email: verificationCode.identifier, emailVerified: true }
       : { mobile: verificationCode.identifier, mobileVerified: true };
@@ -56,6 +55,7 @@ export async function POST(req: NextRequest) {
     const existingUser = await getUserByEmailOrMobile(
       verificationCode.identifier
     ).catch(() => null);
+    const userId = existingUser?.id ?? user?.id ?? generateId(16);
 
     if (existingUser) {
       if (user) {
