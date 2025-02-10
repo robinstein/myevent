@@ -1,7 +1,6 @@
 import { cookies } from "next/headers";
 import { cache } from "react";
-import { validateSessionToken } from "./sessions";
-import { getUserById } from "@/repositories/user";
+import { validateSession } from "@myevent/core";
 
 async function setSessionTokenCookie(token: string, expiresAt: Date) {
   const cookieStore = await cookies();
@@ -11,6 +10,21 @@ async function setSessionTokenCookie(token: string, expiresAt: Date) {
     path: "/",
     secure: process.env.NODE_ENV === "production",
     sameSite: "lax",
+    expires: expiresAt,
+  });
+}
+
+type SignInMethod = "google" | "linkedin" | "otp";
+async function setPreferredSignInMethodCookie(
+  method: SignInMethod,
+  expiresAt: Date
+) {
+  const cookieStore = await cookies();
+
+  cookieStore.set("preferred-signin-method", method, {
+    path: "/",
+    secure: process.env.NODE_ENV === "production",
+    httpOnly: true,
     expires: expiresAt,
   });
 }
@@ -28,22 +42,16 @@ async function deleteSessionTokenCookie() {
 
 async function fetchFreshSession() {
   const cookieStore = await cookies();
-  const sessionToken = cookieStore.get("session")?.value ?? null;
-  if (!sessionToken) return { sesson: null, user: null };
+  const sessionToken = cookieStore.get("session")?.value;
 
-  const session = await validateSessionToken(sessionToken);
-  if (!session) return { sesson: null, user: null };
-
-  const user = await getUserById(session.userId);
-  if (!user) return { sesson: null, user: null };
-
-  return { session, user };
+  return validateSession(sessionToken);
 }
 
 const getCachedSession = cache(fetchFreshSession);
 
 export {
   setSessionTokenCookie,
+  setPreferredSignInMethodCookie,
   deleteSessionTokenCookie,
   fetchFreshSession,
   getCachedSession,
