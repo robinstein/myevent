@@ -1,7 +1,6 @@
 import { deleteSessionTokenCookie } from "@/lib/auth/cookies";
-import type { NextRequest } from "next/server";
 
-export async function GET(_: NextRequest) {
+export async function GET() {
   await deleteSessionTokenCookie();
 
   return new Response(null, {
