@@ -33,7 +33,6 @@ export async function GET(req: NextRequest) {
 
     const params = Object.fromEntries(req.nextUrl.searchParams.entries());
     const result = callbackSchema.safeParse(params);
-
     if (!result.success) {
       return createRedirectResponse("/login", "AUTH_CODE_ERROR");
     }

@@ -1,10 +1,8 @@
 import { deleteSessionTokenCookie } from "@/lib/auth/cookies";
+import { createRedirectResponse } from "@/lib/http";
 
 export async function GET() {
   await deleteSessionTokenCookie();
 
-  return new Response(null, {
-    status: 302,
-    headers: { Location: "/login" },
-  });
+  return createRedirectResponse("/login");
 }

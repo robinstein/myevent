@@ -8,26 +8,21 @@ import { createRedirectResponse } from "@/lib/http";
 const SCOPES = ["openid", "profile", "email", "r_basicprofile"];
 
 export async function GET(req: NextRequest) {
-  try {
-    const cookieStore = await cookies();
-    const state = arctic.generateState();
-    const redirectTo = req.nextUrl.searchParams.get("redirectTo") ?? "/app";
+  const cookieStore = await cookies();
+  const state = arctic.generateState();
+  const redirectTo = req.nextUrl.searchParams.get("redirectTo") ?? "/app";
 
-    const oauthUrl = linkedin.createAuthorizationURL(state, SCOPES);
+  const oauthUrl = linkedin.createAuthorizationURL(state, SCOPES);
 
-    cookieStore.set("redirect_to_url", redirectTo, {
-      ...COOKIE_BASE_OPTIONS,
-      maxAge: 60 * 10,
-    });
-    cookieStore.set("linkedin_oauth_state", state, {
-      ...COOKIE_BASE_OPTIONS,
-      maxAge: 60 * 10,
-      sameSite: "lax",
-    });
+  cookieStore.set("redirect_to_url", redirectTo, {
+    ...COOKIE_BASE_OPTIONS,
+    maxAge: 60 * 10,
+  });
+  cookieStore.set("linkedin_oauth_state", state, {
+    ...COOKIE_BASE_OPTIONS,
+    maxAge: 60 * 10,
+    sameSite: "lax",
+  });
 
-    return createRedirectResponse(oauthUrl.toString());
-  } catch (error) {
-    console.error("LinkedIn OAuth initialization failed:", error);
-    throw error;
-  }
+  return createRedirectResponse(oauthUrl.toString());
 }
