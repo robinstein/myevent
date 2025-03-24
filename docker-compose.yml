@@ -18,9 +18,9 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: securepassword
+      POSTGRES_PASSWORD: ${DATABASE_PASSWORD}
       POSTGRES_DB: myevent_db
-      DATABASE_URL: postgres://postgres:securepassword@localhost:5432/myevent_db
+      DATABASE_URL: postgres://postgres:${DATABASE_PASSWORD}@localhost:5432/myevent_db
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -28,12 +28,33 @@ services:
       interval: 10s
       timeout: 5s
       retries: 3
+    env_file:
+      - .env
+    networks:
+      - app-network
+
+  typesense:
+    image: typesense/typesense:27.1
+    container_name: myevent-typesense
+    ports:
+      - "8108:8108"
+    restart: unless-stopped
+    environment:
+      TYPESENSE_API_KEY: ${TYPESENSE_API_KEY}
+      TYPESENSE_DATA_DIR: /data
+    command:
+      - "--enable-cors"
+    volumes:
+      - typesense_data:/data
+    env_file:
+      - .env
     networks:
       - app-network
 
 volumes:
   redis_data:
   postgres_data:
+  typesense_data:
 
 networks:
   app-network:
