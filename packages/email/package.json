@@ -1,6 +1,5 @@
 {
-  "name": "@myevent/kv",
-  "module": "src/index.ts",
+  "name": "@myevent/email",
   "type": "module",
   "private": true,
   "scripts": {
@@ -11,16 +10,19 @@
   },
   "dependencies": {
     "@myevent/types": "workspace:*",
-    "ioredis": "^5.4.2"
+    "@myevent/utils": "workspace:*",
+    "@react-email/components": "^0.0.36"
   },
   "devDependencies": {
     "@myevent/tsconfig": "workspace:*",
-    "@types/bun": "latest"
+    "@types/bun": "latest",
+    "@types/react": "^19.0.6"
   },
   "peerDependencies": {
-    "typescript": "^5.8.2"
+    "typescript": "^5.8.2",
+    "react": "^19.0.0"
   },
   "exports": {
-    ".": "./src/index.ts"
+    "./emails/*": "./emails/*.tsx"
   }
 }

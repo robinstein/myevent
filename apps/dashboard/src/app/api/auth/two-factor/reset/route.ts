@@ -1,46 +1,64 @@
 import type { NextRequest } from "next/server";
 import { z } from "zod";
 import { getCachedSession } from "@/lib/auth/cookies";
-import { setSessionTwoFactorVerified } from "@/lib/auth/sessions";
+import { setSessionTwoFactorVerified } from "@myevent/auth";
 import { resetTwoFactorWithRecoveryCode } from "@myevent/repositories";
+import { recoveryCodeSchema } from "@myevent/utils";
 
-const recoveryCodeSchema = z.object({
-  recovery_code: z.string().length(16, "Recovery code must be 16 characters"),
+const validator = z.object({
+  recovery_code: recoveryCodeSchema,
 });
 
-export async function POST(req: NextRequest) {
+export async function POST(req: NextRequest): Promise<Response> {
   try {
-    const { session, user } = await getCachedSession();
+    const { user, session } = await getCachedSession();
 
-    if (!session || !user) {
-      return Response.json({ message: "Unauthorized" }, { status: 401 });
+    if (!user || !session) {
+      return Response.json(
+        { message: "Authentication required" },
+        { status: 401 }
+      );
+    }
+    if (!user.twoFactorEnabled && !user.twoFactorSecret) {
+      return Response.json({ message: "Forbidden" }, { status: 403 });
     }
 
-    const result = recoveryCodeSchema.safeParse(await req.json());
+    const body = await req.json();
+    const result = validator.safeParse(body);
     if (!result.success) {
       return Response.json(
-        { message: "Invalid recovery code format" },
+        { message: "Validation failed", details: result.error.flatten() },
         { status: 400 }
       );
     }
 
     const { recovery_code: recoveryCode } = result.data;
 
-    const newRecoveryCode = await resetTwoFactorWithRecoveryCode(
-      user.id,
-      recoveryCode
-    ).catch((error) => {
-      console.error("Failed to reset two-factor auth:", error);
-      throw error;
-    });
+    let newRecoveryCode: string;
+    try {
+      newRecoveryCode = await resetTwoFactorWithRecoveryCode(
+        user.id,
+        recoveryCode
+      );
+    } catch (error) {
+      console.error("Failed to reset two-factor authentication:", error);
+      return Response.json(
+        { message: "Invalid recovery code or reset failed" },
+        { status: 400 }
+      );
+    }
 
-    await setSessionTwoFactorVerified(session.id, false);
+    try {
+      await setSessionTwoFactorVerified(session.id, false);
+    } catch (error) {
+      console.error("Failed to update session verification status:", error);
+    }
 
     return Response.json({ recovery_code: newRecoveryCode }, { status: 200 });
   } catch (error) {
     console.error("Two-factor reset error:", error);
     return Response.json(
-      { message: "Failed to reset two-factor authentication" },
+      { message: "Failed to process two-factor authentication reset" },
       { status: 500 }
     );
   }

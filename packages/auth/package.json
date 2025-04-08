@@ -1,5 +1,5 @@
 {
-  "name": "@myevent/kv",
+  "name": "@myevent/auth",
   "module": "src/index.ts",
   "type": "module",
   "private": true,
@@ -10,8 +10,14 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@myevent/db": "workspace:*",
+    "@myevent/kv": "workspace:*",
+    "@myevent/repositories": "workspace:*",
     "@myevent/types": "workspace:*",
-    "ioredis": "^5.4.2"
+    "@myevent/utils": "workspace:*",
+    "@oslojs/crypto": "^1.0.1",
+    "@oslojs/encoding": "^1.1.0",
+    "zod": "^3.24.1"
   },
   "devDependencies": {
     "@myevent/tsconfig": "workspace:*",

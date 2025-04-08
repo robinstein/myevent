@@ -1,81 +1,150 @@
 import { cookies } from "next/headers";
 import type { NextRequest } from "next/server";
-import { z } from "zod";
-import { validateVerificationCode } from "@/lib/auth/verification";
-import { initializeUserSession } from "@/lib/auth/sessions";
-import { getCachedSession, type SignInMethod } from "@/lib/auth/cookies";
-import { generateId, isEmail } from "@myevent/core";
+import { processAuthentication } from "@/lib/auth/sessions";
+import { getCachedSession } from "@/lib/auth/cookies";
+import { applyIpRateLimit } from "@/lib/rate-limit";
 import {
-  createUser,
-  getUserByEmailOrMobile,
-  updateUser,
-} from "@myevent/repositories";
-import { createRedirectResponse } from "@/lib/http";
+  type SignInMethod,
+  COOKIE,
+  AUTH_ERRORS,
+  AUTH_REDIRECTS,
+  validateVerificationCode,
+} from "@myevent/auth";
+import { getUserByEmailOrMobile } from "@myevent/repositories";
+import {
+  parseQueryParams,
+  identifierAndCodeSchema,
+  emailAndCodeSchema,
+  isValidEmail,
+  otpLoginLimiter,
+  createRedirectResponse,
+  getRedirectUrlFromQueryParams,
+} from "@myevent/utils";
 
 const SIGN_IN_METHOD: SignInMethod = "otp";
 
-const verificationSchema = z.object({
-  identifier: z.string().min(1, "Identifier is required"),
-  code: z
-    .string()
-    .length(6)
-    .regex(/^\d{6}$/, {
-      message: "Code must be a 6-digit numeric string.",
-    }),
-});
-
 export async function POST(req: NextRequest) {
   try {
+    const headers = await req.headers;
+    const searchParams = req.nextUrl.searchParams;
+
+    const rateLimit = await applyIpRateLimit(otpLoginLimiter, headers);
+    if (rateLimit.throttled) {
+      return rateLimit.response;
+    }
+
     const { user } = await getCachedSession();
     const cookieStore = await cookies();
-    const redirectUrl = cookieStore.get("redirect_to_url")?.value ?? "/app";
 
-    const result = verificationSchema.safeParse(await req.json());
+    const redirectTo =
+      getRedirectUrlFromQueryParams(searchParams) ??
+      cookieStore.get(COOKIE.NAMES.REDIRECT_URL)?.value ??
+      AUTH_REDIRECTS.DEFAULT;
+
+    const body = await req.json();
+    const result = identifierAndCodeSchema.safeParse(body);
     if (!result.success) {
       return Response.json(
-        {
-          error: "Validation failed",
-          details: result.error.flatten(),
-        },
+        { message: "Validation failed", details: result.error.flatten() },
         { status: 400 }
       );
     }
 
     const { identifier, code } = result.data;
-
-    const verificationCode = await validateVerificationCode(identifier, code);
+    const verificationCode = await validateVerificationCode(
+      identifier.identifier,
+      code
+    );
     if (!verificationCode) {
-      return createRedirectResponse(redirectUrl, "INVALID_EMAIL_CODE");
+      return Response.json(
+        { message: "Invalid verification code" },
+        { status: 400 }
+      );
     }
 
-    const userDetails = isEmail(verificationCode.identifier)
+    const userDetails = isValidEmail(verificationCode.identifier)
       ? { email: verificationCode.identifier, emailVerified: true }
       : { mobile: verificationCode.identifier, mobileVerified: true };
 
     const existingUser = await getUserByEmailOrMobile(
       verificationCode.identifier
     ).catch(() => null);
-    const userId = existingUser?.id ?? user?.id ?? generateId(16);
 
-    if (existingUser) {
-      if (user) {
-        await updateUser(userId, userDetails);
-      }
+    return processAuthentication(
+      userDetails,
+      existingUser,
+      user,
+      redirectTo,
+      SIGN_IN_METHOD,
+      false
+    );
+  } catch (err) {
+    console.error("OTP verification error:", err);
+    return createRedirectResponse(
+      AUTH_REDIRECTS.LOGIN,
+      AUTH_ERRORS.AUTH_CODE_ERROR
+    );
+  }
+}
 
-      await initializeUserSession(userId, SIGN_IN_METHOD);
-      return Response.json({ redirectTo: redirectUrl }, { status: 200 });
+export async function GET(req: NextRequest) {
+  try {
+    const headers = await req.headers;
+    const searchParams = req.nextUrl.searchParams;
+
+    const rateLimit = await applyIpRateLimit(otpLoginLimiter, headers);
+    if (rateLimit.throttled) {
+      return rateLimit.response;
     }
 
-    await createUser({
-      id: userId,
-      ...userDetails,
-    });
+    const { user } = await getCachedSession();
+    const cookieStore = await cookies();
 
-    await initializeUserSession(userId, SIGN_IN_METHOD);
-    return Response.json({ redirectTo: "/onboarding" }, { status: 200 });
-  } catch (error) {
-    console.error("OTP verification error:", error);
+    const params = parseQueryParams(req.url);
+    const result = emailAndCodeSchema.safeParse(params);
+    if (!result.success) {
+      return createRedirectResponse(
+        AUTH_REDIRECTS.LOGIN,
+        AUTH_ERRORS.INVALID_CODE
+      );
+    }
 
-    return createRedirectResponse("/login", "AUTH_CODE_ERROR");
+    const redirectTo =
+      getRedirectUrlFromQueryParams(searchParams) ??
+      cookieStore.get(COOKIE.NAMES.REDIRECT_URL)?.value ??
+      AUTH_REDIRECTS.DEFAULT;
+
+    const { email, code } = result.data;
+    const verificationCode = await validateVerificationCode(email, code);
+    if (!verificationCode) {
+      return createRedirectResponse(
+        AUTH_REDIRECTS.LOGIN,
+        AUTH_ERRORS.INVALID_CODE
+      );
+    }
+
+    const userDetails = {
+      email: verificationCode.identifier,
+      emailVerified: true,
+    } as const;
+
+    const existingUser = await getUserByEmailOrMobile(
+      verificationCode.identifier
+    ).catch(() => null);
+
+    return processAuthentication(
+      userDetails,
+      existingUser,
+      user,
+      redirectTo,
+      SIGN_IN_METHOD,
+      true
+    );
+  } catch (err) {
+    console.error("OTP verification error:", err);
+    return createRedirectResponse(
+      AUTH_REDIRECTS.LOGIN,
+      AUTH_ERRORS.AUTH_CODE_ERROR
+    );
   }
 }

@@ -1,9 +1,17 @@
-import "server-only";
 import Redis from "ioredis";
 
-export const redis = new Redis(process.env.REDIS_URL!);
+// Create a single Redis connection with optimized settings
+export const redis = new Redis(process.env.REDIS_URL!, {
+  maxRetriesPerRequest: 3,
+  connectTimeout: 10000,
+  enableReadyCheck: true,
+  enableOfflineQueue: true,
+  retryStrategy(times) {
+    return Math.min(times * 50, 2000); // Exponential backoff with max 2s
+  },
+});
 
-async function getFromCache<T>(key: string): Promise<T | null> {
+export async function getFromCache<T>(key: string): Promise<T | null> {
   try {
     const cached = await redis.get(key);
     return cached ? (JSON.parse(cached) as T) : null;
@@ -12,20 +20,24 @@ async function getFromCache<T>(key: string): Promise<T | null> {
   }
 }
 
-async function setToCache<T>(
+export async function setToCache<T>(
   key: string,
   value: T,
   ttl: number
 ): Promise<boolean> {
   try {
-    await redis.set(key, JSON.stringify(value), "EX", ttl);
+    const pipeline = redis.pipeline();
+    pipeline.set(key, JSON.stringify(value));
+    pipeline.expire(key, ttl);
+    await pipeline.exec();
     return true;
-  } catch {
+  } catch (err) {
+    console.error("Cache set error:", err);
     return false;
   }
 }
 
-async function deleteFromCache(key: string): Promise<boolean> {
+export async function deleteFromCache(key: string): Promise<boolean> {
   try {
     await redis.del(key);
     return true;
@@ -34,12 +46,12 @@ async function deleteFromCache(key: string): Promise<boolean> {
   }
 }
 
-interface CacheOptions {
+export interface CacheOptions {
   ttl?: number;
   key: string;
 }
 
-async function withCache<T>(
+export async function withCache<T>(
   key: string,
   fn: () => Promise<T>,
   ttl = 3600
@@ -53,6 +65,3 @@ async function withCache<T>(
   await setToCache(key, fresh, ttl);
   return fresh;
 }
-
-export { getFromCache, setToCache, withCache, deleteFromCache };
-export type { CacheOptions };

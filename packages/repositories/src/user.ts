@@ -1,14 +1,22 @@
 import {
-  generateRandomRecoveryCode,
   decryptToString,
-  encryptString,
-} from "@myevent/core";
-import { db, users, eq, type NewUser, type User, or } from "@myevent/db";
-import { decodeBase64, encodeBase64 } from "@oslojs/encoding";
+  transformUser,
+  getUserIdentifier,
+  generateRecoveryCode,
+} from "@myevent/utils";
+import {
+  db,
+  users,
+  or,
+  eq,
+  type NewUser,
+  type User,
+  type DBQueryConfig,
+} from "@myevent/db";
+import { decodeBase64 } from "@oslojs/encoding";
 
-async function createUser(user: NewUser): Promise<User> {
-  // TODO: Refractor
-  const identifier = (user.email ?? user.mobile)!;
+export async function createUser(user: NewUser): Promise<User> {
+  const identifier = getUserIdentifier(user);
 
   const existingUser = await db.query.users.findFirst({
     where: or(eq(users.email, identifier), eq(users.mobile, identifier)),
@@ -18,12 +26,9 @@ async function createUser(user: NewUser): Promise<User> {
     throw new Error("User with this email or mobile number already exists");
   }
 
-  const recoveryCode = generateRandomRecoveryCode();
-  const encryptedRecoveryCode = encryptString(recoveryCode);
-
   const newUser = {
     ...user,
-    twoFactorRecoveryCode: encodeBase64(encryptedRecoveryCode),
+    twoFactorRecoveryCode: generateRecoveryCode(),
   } satisfies NewUser;
 
   const [result] = await db.insert(users).values(newUser).returning();
@@ -35,7 +40,7 @@ async function createUser(user: NewUser): Promise<User> {
   return result;
 }
 
-async function getUserById(id: string): Promise<User> {
+export async function getUserById(id: string): Promise<User> {
   const user = await db.query.users.findFirst({
     where: eq(users.id, id),
   });
@@ -44,10 +49,10 @@ async function getUserById(id: string): Promise<User> {
     throw new Error("User not found");
   }
 
-  return user;
+  return transformUser(user);
 }
 
-async function getUserByGoogleId(id: string): Promise<User> {
+export async function getUserByGoogleId(id: string): Promise<User> {
   const user = await db.query.users.findFirst({
     where: eq(users.googleId, id),
   });
@@ -56,10 +61,10 @@ async function getUserByGoogleId(id: string): Promise<User> {
     throw new Error("User not found");
   }
 
-  return user;
+  return transformUser(user);
 }
 
-async function getUserByLinkedinId(id: string): Promise<User> {
+export async function getUserByLinkedinId(id: string): Promise<User> {
   const user = await db.query.users.findFirst({
     where: eq(users.linkedinId, id),
   });
@@ -68,10 +73,10 @@ async function getUserByLinkedinId(id: string): Promise<User> {
     throw new Error("User not found");
   }
 
-  return user;
+  return transformUser(user);
 }
 
-async function getUserByEmail(email: string): Promise<User> {
+export async function getUserByEmail(email: string): Promise<User> {
   const user = await db.query.users.findFirst({
     where: eq(users.email, email),
   });
@@ -80,10 +85,10 @@ async function getUserByEmail(email: string): Promise<User> {
     throw new Error("User not found");
   }
 
-  return user;
+  return transformUser(user);
 }
 
-async function getUserByMobile(mobile: string): Promise<User> {
+export async function getUserByMobile(mobile: string): Promise<User> {
   const user = await db.query.users.findFirst({
     where: eq(users.mobile, mobile),
   });
@@ -92,10 +97,12 @@ async function getUserByMobile(mobile: string): Promise<User> {
     throw new Error("User not found");
   }
 
-  return user;
+  return transformUser(user);
 }
 
-async function getUserByEmailOrMobile(identifier: string): Promise<User> {
+export async function getUserByEmailOrMobile(
+  identifier: string
+): Promise<User> {
   const user = await db.query.users.findFirst({
     where: or(eq(users.email, identifier), eq(users.mobile, identifier)),
   });
@@ -104,10 +111,17 @@ async function getUserByEmailOrMobile(identifier: string): Promise<User> {
     throw new Error("User not found");
   }
 
-  return user;
+  return transformUser(user);
 }
 
-async function updateUser(
+export type ListUsersOptions = DBQueryConfig<"many", true>;
+export async function listUsers(options?: ListUsersOptions): Promise<User[]> {
+  const users = await db.query.users.findMany(options);
+
+  return users.map(transformUser);
+}
+
+export async function updateUser(
   id: string,
   updates: Partial<Omit<NewUser, "id">>
 ): Promise<User> {
@@ -124,7 +138,7 @@ async function updateUser(
   return result;
 }
 
-async function resetTwoFactorWithRecoveryCode(
+export async function resetTwoFactorWithRecoveryCode(
   userId: string,
   recoveryCode: string
 ) {
@@ -139,21 +153,25 @@ async function resetTwoFactorWithRecoveryCode(
       throw new Error("User not found");
     }
 
-    const decodedRecoveryCode = decodeBase64(user.twoFactorRecoveryCode);
+    const decodedRecoveryCode = user.twoFactorRecoveryCode
+      ? decodeBase64(user.twoFactorRecoveryCode)
+      : null;
+    if (!decodedRecoveryCode) {
+      throw new Error("No recovery code found");
+    }
     const decryptedRecoveryCode = decryptToString(decodedRecoveryCode);
 
     if (decryptedRecoveryCode !== recoveryCode) {
       throw new Error("Invalid recovery code");
     }
 
-    const newRecoveryCode = generateRandomRecoveryCode();
-    const encryptedNewRecoveryCode = encryptString(newRecoveryCode);
+    const newRecoveryCode = generateRecoveryCode();
 
     const [updatedUser] = await tx
       .update(users)
       .set({
         twoFactorSecret: null,
-        twoFactorRecoveryCode: encodeBase64(encryptedNewRecoveryCode),
+        twoFactorRecoveryCode: newRecoveryCode,
         twoFactorEnabled: false,
       })
       .where(eq(users.id, userId))
@@ -166,19 +184,14 @@ async function resetTwoFactorWithRecoveryCode(
     return newRecoveryCode;
   });
 
+  if (!result) {
+    throw new Error("Failed to reset two factor");
+  }
+
   return result;
 }
 
-async function resetRecoveryCode(userId: string) {
-  const recoveryCode = generateRandomRecoveryCode();
-  const encrypted = encryptString(recoveryCode);
-
-  await updateUser(userId, { twoFactorRecoveryCode: encodeBase64(encrypted) });
-
-  return recoveryCode;
-}
-
-async function deleteUser(id: string): Promise<string> {
+export async function deleteUser(id: string): Promise<string> {
   const [result] = await db.delete(users).where(eq(users.id, id)).returning();
 
   if (!result) {
@@ -187,17 +200,3 @@ async function deleteUser(id: string): Promise<string> {
 
   return result.id;
 }
-
-export {
-  createUser,
-  getUserById,
-  getUserByGoogleId,
-  getUserByLinkedinId,
-  getUserByEmail,
-  getUserByMobile,
-  getUserByEmailOrMobile,
-  updateUser,
-  resetTwoFactorWithRecoveryCode,
-  resetRecoveryCode,
-  deleteUser,
-};

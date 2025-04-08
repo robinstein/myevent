@@ -1,8 +1,20 @@
-import { deleteSessionTokenCookie } from "@/lib/auth/cookies";
-import { createRedirectResponse } from "@/lib/http";
+import {
+  deleteRedirectUrlCookie,
+  deleteSessionTokenCookie,
+  getCachedSession,
+} from "@/lib/auth/cookies";
+import { AUTH_REDIRECTS, invalidateSession } from "@myevent/auth";
+import { createRedirectResponse } from "@myevent/utils";
 
 export async function GET() {
-  await deleteSessionTokenCookie();
+  const { session } = await getCachedSession();
 
-  return createRedirectResponse("/login");
+  if (session) {
+    await deleteRedirectUrlCookie();
+
+    await invalidateSession(session.id);
+    await deleteSessionTokenCookie();
+  }
+
+  return createRedirectResponse(AUTH_REDIRECTS.LOGIN);
 }

@@ -1,19 +1,19 @@
 import { z } from "zod";
 import * as arctic from "arctic";
 
-const getCallbackUrl = (provider: string) => {
+export const getCallbackUrl = (provider: string) => {
   return process.env.APPLICATION_URL
     ? `https://${process.env.APPLICATION_URL}/api/auth/${provider}/callback`
     : `http://localhost:3000/api/auth/${provider}/callback`;
 };
 
-const linkedin = new arctic.LinkedIn(
+export const linkedin = new arctic.LinkedIn(
   process.env.OAUTH_LINKEDIN_CLIENT_ID!,
   process.env.OAUTH_LINKEDIN_CLIENT_SECRET!,
   getCallbackUrl("linkedin")
 );
 
-const LinkedinUserSchema = z.object({
+export const LinkedinUserSchema = z.object({
   sub: z.string(),
   name: z.string(),
   given_name: z.string(),
@@ -24,14 +24,14 @@ const LinkedinUserSchema = z.object({
   picture: z.string().nullable(),
 });
 
-const LinkedinProfileSchema = z.object({
+export const LinkedinProfileSchema = z.object({
   vanityName: z.string(),
   localizedHeadline: z.string(),
 });
 
-type LinkedinProfile = z.infer<typeof LinkedinProfileSchema>;
+export type LinkedinProfile = z.infer<typeof LinkedinProfileSchema>;
 
-async function getLinkedinProfile(
+export async function getLinkedinProfile(
   accessToken: string
 ): Promise<LinkedinProfile> {
   const response = await fetch("https://api.linkedin.com/v2/me", {
@@ -49,13 +49,13 @@ async function getLinkedinProfile(
   return LinkedinProfileSchema.parse(data);
 }
 
-const google = new arctic.Google(
+export const google = new arctic.Google(
   process.env.OAUTH_GOOGLE_CLIENT_ID!,
   process.env.OAUTH_GOOGLE_CLIENT_SECRET!,
   getCallbackUrl("google")
 );
 
-const GoogleUserSchema = z.object({
+export const GoogleUserSchema = z.object({
   id: z.string(),
   email: z.string().email(),
   verified_email: z.boolean(),
@@ -65,9 +65,9 @@ const GoogleUserSchema = z.object({
   picture: z.string().url(),
 });
 
-type GoogleUser = z.infer<typeof GoogleUserSchema>;
+export type GoogleUser = z.infer<typeof GoogleUserSchema>;
 
-async function getGoogleUser(accessToken: string): Promise<GoogleUser> {
+export async function getGoogleUser(accessToken: string): Promise<GoogleUser> {
   try {
     const response = await fetch(
       "https://www.googleapis.com/oauth2/v2/userinfo",
@@ -89,11 +89,3 @@ async function getGoogleUser(accessToken: string): Promise<GoogleUser> {
     throw new Error(`Invalid Google user: ${err}`);
   }
 }
-
-export {
-  LinkedinUserSchema,
-  getLinkedinProfile,
-  getGoogleUser,
-  linkedin,
-  google,
-};

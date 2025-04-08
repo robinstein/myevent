@@ -1,59 +1,67 @@
 import { cookies } from "next/headers";
 import { cache } from "react";
-import { validateSession } from "@myevent/core";
+import { validateSession, COOKIE, type SignInMethod } from "@myevent/auth";
+import { transformUser } from "@myevent/utils";
 
-const COOKIE_BASE_OPTIONS = {
-  path: "/",
-  secure: process.env.NODE_ENV === "production",
-  httpOnly: true,
-};
-
-async function setSessionTokenCookie(token: string, expiresAt: Date) {
+export async function setSessionTokenCookie(token: string, expiresAt: Date) {
   const cookieStore = await cookies();
 
-  cookieStore.set("session", token, {
-    ...COOKIE_BASE_OPTIONS,
-    sameSite: "lax",
+  cookieStore.set(COOKIE.NAMES.SESSION, token, {
+    ...COOKIE.BASE_OPTIONS,
     expires: expiresAt,
   });
 }
 
-export type SignInMethod = "google" | "linkedin" | "otp";
-async function setPreferredSignInMethodCookie(
+export async function deleteSessionTokenCookie() {
+  const cookieStore = await cookies();
+  cookieStore.set(COOKIE.NAMES.SESSION, "", {
+    ...COOKIE.BASE_OPTIONS,
+    maxAge: 0,
+  });
+}
+
+export async function setRedirectUrlCookie(url: string) {
+  const cookieStore = await cookies();
+  cookieStore.set(COOKIE.NAMES.REDIRECT_URL, url, {
+    ...COOKIE.BASE_OPTIONS,
+    maxAge: 60 * 10,
+  });
+}
+
+export async function deleteRedirectUrlCookie() {
+  const cookieStore = await cookies();
+  cookieStore.set(COOKIE.NAMES.REDIRECT_URL, "", {
+    ...COOKIE.BASE_OPTIONS,
+    maxAge: 0,
+  });
+}
+
+export async function setPreferredSignInMethodCookie(
   method: SignInMethod,
   expiresAt: Date
 ) {
   const cookieStore = await cookies();
 
-  cookieStore.set("preferred-signin-method", method, {
-    ...COOKIE_BASE_OPTIONS,
+  cookieStore.set(COOKIE.NAMES.AUTH_METHOD, method, {
+    ...COOKIE.BASE_OPTIONS,
     expires: expiresAt,
   });
 }
 
-async function deleteSessionTokenCookie() {
+export async function fetchFreshSession() {
   const cookieStore = await cookies();
-  cookieStore.set("session", "", {
-    ...COOKIE_BASE_OPTIONS,
-    sameSite: "lax",
-    maxAge: 0,
-  });
+  const sessionToken = cookieStore.get(COOKIE.NAMES.SESSION)?.value;
+
+  const validationResult = await validateSession(sessionToken);
+
+  if (!validationResult.user) {
+    return validationResult;
+  }
+
+  return {
+    ...validationResult,
+    user: validationResult.user ? transformUser(validationResult.user) : null,
+  };
 }
 
-async function fetchFreshSession() {
-  const cookieStore = await cookies();
-  const sessionToken = cookieStore.get("session")?.value;
-
-  return validateSession(sessionToken);
-}
-
-const getCachedSession = cache(fetchFreshSession);
-
-export {
-  COOKIE_BASE_OPTIONS,
-  setSessionTokenCookie,
-  setPreferredSignInMethodCookie,
-  deleteSessionTokenCookie,
-  fetchFreshSession,
-  getCachedSession,
-};
+export const getCachedSession = cache(fetchFreshSession);

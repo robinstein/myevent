@@ -1,0 +1,12 @@
+{
+  "extends": "@myevent/tsconfig/base.json",
+  "compilerOptions": {
+    "baseUrl": ".",
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "jsx": "react-jsx",
+    "jsxImportSource": "react"
+  },
+  "include": ["emails", "components"],
+  "exclude": ["node_modules"]
+}

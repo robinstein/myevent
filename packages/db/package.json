@@ -2,6 +2,7 @@
   "name": "@myevent/db",
   "module": "src/index.ts",
   "type": "module",
+  "private": true,
   "scripts": {
     "clean": "rm -rf .turbo node_modules",
     "lint": "biome check .",
@@ -9,17 +10,19 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@myevent/types": "workspace:*",
     "drizzle-orm": "^0.38.4",
     "drizzle-zod": "^0.7.0",
     "pg": "^8.13.1"
   },
   "devDependencies": {
+    "@myevent/tsconfig": "workspace:*",
     "@types/bun": "latest",
     "@types/pg": "^8.11.10",
     "drizzle-kit": "^0.30.2"
   },
   "peerDependencies": {
-    "typescript": "^5.7.3"
+    "typescript": "^5.8.2"
   },
   "exports": {
     ".": "./src/index.ts"

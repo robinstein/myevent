@@ -1,5 +1,5 @@
 {
-  "name": "@myevent/kv",
+  "name": "@myevent/types",
   "module": "src/index.ts",
   "type": "module",
   "private": true,
@@ -8,10 +8,6 @@
     "lint": "biome check .",
     "format": "biome --write .",
     "typecheck": "tsc --noEmit"
-  },
-  "dependencies": {
-    "@myevent/types": "workspace:*",
-    "ioredis": "^5.4.2"
   },
   "devDependencies": {
     "@myevent/tsconfig": "workspace:*",

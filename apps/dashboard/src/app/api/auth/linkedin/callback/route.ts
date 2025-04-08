@@ -8,15 +8,27 @@ import {
   LinkedinUserSchema,
 } from "@/lib/auth/providers";
 import { initializeUserSession } from "@/lib/auth/sessions";
-import { getCachedSession, type SignInMethod } from "@/lib/auth/cookies";
-import { createRedirectResponse } from "@/lib/http";
-import { getDifferingValues } from "@/utils/objects";
-import { generateId } from "@myevent/core";
+import { getCachedSession, deleteRedirectUrlCookie } from "@/lib/auth/cookies";
+import { applyIpRateLimit } from "@/lib/rate-limit";
+import {
+  getDifferingValues,
+  generateId,
+  parseQueryParams,
+  linkedinOAuthLimiter,
+  createRedirectResponse,
+} from "@myevent/utils";
 import {
   getUserByLinkedinId,
   updateUser,
   createUser,
+  getUserByEmail,
 } from "@myevent/repositories";
+import {
+  type SignInMethod,
+  AUTH_ERRORS,
+  AUTH_REDIRECTS,
+  COOKIE,
+} from "@myevent/auth";
 
 const SIGN_IN_METHOD: SignInMethod = "linkedin";
 
@@ -26,40 +38,126 @@ const callbackSchema = z.object({
 });
 
 export async function GET(req: NextRequest) {
+  const headers = await req.headers;
+  const searchParams = req.nextUrl.searchParams;
+
+  const rateLimit = await applyIpRateLimit(linkedinOAuthLimiter, headers);
+  if (rateLimit.throttled) {
+    return rateLimit.response;
+  }
+
   try {
     const { user } = await getCachedSession();
     const cookieStore = await cookies();
-    let redirectUrl = cookieStore.get("redirect_to_url")?.value ?? "/app";
+    const redirectUrl =
+      cookieStore.get(COOKIE.NAMES.REDIRECT_URL)?.value ??
+      AUTH_REDIRECTS.DEFAULT;
 
-    const params = Object.fromEntries(req.nextUrl.searchParams.entries());
+    await deleteRedirectUrlCookie();
+
+    const params = parseQueryParams(req.url);
     const result = callbackSchema.safeParse(params);
     if (!result.success) {
-      return createRedirectResponse("/login", "AUTH_CODE_ERROR");
+      return createRedirectResponse(
+        AUTH_REDIRECTS.LOGIN,
+        AUTH_ERRORS.AUTH_CODE_ERROR
+      );
     }
 
     const { code, state } = result.data;
-    const storedState = cookieStore.get("linkedin_oauth_state")?.value;
+    const storedState = cookieStore.get(
+      COOKIE.NAMES.OAUTH_LINKEDIN_STATE
+    )?.value;
 
     if (!storedState || state !== storedState) {
-      return createRedirectResponse("/login", "INVALID_STATE");
+      return createRedirectResponse(
+        AUTH_REDIRECTS.LOGIN,
+        AUTH_ERRORS.INVALID_STATE
+      );
     }
 
     const tokens = await linkedin.validateAuthorizationCode(code);
+    const idToken = tokens.idToken();
     const linkedinUser = LinkedinUserSchema.parse(
-      arctic.decodeIdToken(tokens.idToken())
+      arctic.decodeIdToken(idToken)
     );
 
-    const linkedinProfile = await getLinkedinProfile(tokens.accessToken());
+    const accessToken = tokens.accessToken();
+    const linkedinProfile = await getLinkedinProfile(accessToken);
     if (!linkedinProfile) {
-      throw new Error("Failed to fetch LinkedIn profile");
+      throw new Error("Failed to fetch LinkedIn profile data from API");
     }
 
-    const existingUser = await getUserByLinkedinId(linkedinUser.sub).catch(
+    if (user) {
+      const existingLinkedInUser = await getUserByLinkedinId(
+        linkedinUser.sub
+      ).catch(() => null);
+      if (existingLinkedInUser && existingLinkedInUser.id !== user.id) {
+        return createRedirectResponse(
+          "/settings/integrations",
+          AUTH_ERRORS.LINKEDIN_ALREADY_LINKED
+        );
+      }
+
+      await updateUser(user.id, {
+        linkedinId: linkedinUser.sub,
+        linkedinVanityName: linkedinProfile.vanityName,
+        name: user.name || linkedinUser.name,
+        avatarUrl: user.avatarUrl || linkedinUser.picture,
+        biography: user.biography || linkedinProfile.localizedHeadline,
+      });
+
+      return createRedirectResponse(redirectUrl);
+    }
+
+    const existingUserById = await getUserByLinkedinId(linkedinUser.sub).catch(
       () => null
     );
-    const userId = existingUser?.id ?? user?.id ?? generateId(16);
+    if (existingUserById) {
+      const updates = getDifferingValues(existingUserById, {
+        name: existingUserById.name || linkedinUser.name,
+        avatarUrl: existingUserById.avatarUrl || linkedinUser.picture,
+        linkedinVanityName:
+          existingUserById.linkedinVanityName || linkedinProfile.vanityName,
+        biography:
+          existingUserById.biography || linkedinProfile.localizedHeadline,
+      });
 
-    const userDetails = {
+      if (Object.keys(updates).length > 0) {
+        await updateUser(existingUserById.id, updates);
+      }
+
+      await initializeUserSession(existingUserById.id, SIGN_IN_METHOD);
+      return createRedirectResponse(redirectUrl);
+    }
+
+    if (linkedinUser.email && linkedinUser.email_verified) {
+      const existingUserByEmail = await getUserByEmail(
+        linkedinUser.email
+      ).catch(() => null);
+
+      if (existingUserByEmail) {
+        if (existingUserByEmail.linkedinId) {
+          throw new Error("LinkedIn ID mismatch");
+        }
+
+        await updateUser(existingUserByEmail.id, {
+          linkedinId: linkedinUser.sub,
+          linkedinVanityName: linkedinProfile.vanityName,
+          name: existingUserByEmail.name || linkedinUser.name,
+          avatarUrl: existingUserByEmail.avatarUrl || linkedinUser.picture,
+          biography:
+            existingUserByEmail.biography || linkedinProfile.localizedHeadline,
+        });
+
+        await initializeUserSession(existingUserByEmail.id, SIGN_IN_METHOD);
+        return createRedirectResponse(redirectUrl);
+      }
+    }
+
+    const newUserId = generateId(16);
+    await createUser({
+      id: newUserId,
       name: linkedinUser.name,
       avatarUrl: linkedinUser.picture,
       email: linkedinUser.email,
@@ -67,31 +165,15 @@ export async function GET(req: NextRequest) {
       linkedinId: linkedinUser.sub,
       linkedinVanityName: linkedinProfile.vanityName,
       biography: linkedinProfile.localizedHeadline,
-    };
+    });
 
-    if (existingUser) {
-      const updates = getDifferingValues(existingUser, userDetails);
-      if (Object.keys(updates).length > 0) {
-        await updateUser(existingUser.id, updates);
-      }
-    } else if (user) {
-      const updates = getDifferingValues(user, userDetails);
-      if (Object.keys(updates).length > 0) {
-        await updateUser(user.id, updates);
-      }
-    } else {
-      await createUser({
-        id: userId,
-        ...userDetails,
-      });
-
-      redirectUrl = "/onboarding";
-    }
-
-    await initializeUserSession(userId, SIGN_IN_METHOD);
-    return createRedirectResponse(redirectUrl);
-  } catch (error) {
-    console.error("LinkedIn authentication error:", error);
-    return createRedirectResponse("/login", "AUTH_CODE_ERROR");
+    await initializeUserSession(newUserId, SIGN_IN_METHOD);
+    return createRedirectResponse(AUTH_REDIRECTS.ONBOARDING);
+  } catch (err) {
+    console.error("LinkedIn authentication error:", err);
+    return createRedirectResponse(
+      AUTH_REDIRECTS.LOGIN,
+      AUTH_ERRORS.AUTH_CODE_ERROR
+    );
   }
 }

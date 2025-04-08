@@ -1,26 +1,26 @@
 import { encodeBase64 } from "@oslojs/encoding";
 import { createTOTPKeyURI } from "@oslojs/otp";
 
-interface TOTPConfig {
+export interface TOTPConfig {
   issuer: string;
   period: number;
   digits: number;
 }
 
-const DEFAULT_CONFIG: TOTPConfig = {
-  issuer: "myevent",
+const DEFAULT_CONFIG = {
+  issuer: process.env.NEXT_PUBLIC_APP_NAME ?? "myevent",
   period: 30,
   digits: 6,
-};
+} as const;
 
-function generateTOTPKey(): Uint8Array {
+export function generateTOTPKey(): Uint8Array {
   const KEY_LENGTH = 20;
   const totpKey = new Uint8Array(KEY_LENGTH);
   crypto.getRandomValues(totpKey);
   return totpKey;
 }
 
-function generateTOTPData(
+export function generateTOTPData(
   identifier: string,
   config: Partial<TOTPConfig> = {}
 ) {
@@ -36,9 +36,4 @@ function generateTOTPData(
   };
 }
 
-export {
-  DEFAULT_CONFIG as TWO_FACTOR_DEFAULT_CONFIG,
-  generateTOTPKey,
-  generateTOTPData,
-};
-export type { TOTPConfig };
+export { DEFAULT_CONFIG as TWO_FACTOR_DEFAULT_CONFIG };
